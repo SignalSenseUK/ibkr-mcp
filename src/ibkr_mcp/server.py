@@ -55,6 +55,7 @@ ToolRegistrar = Callable[[FastMCP[AppContext], Callable[[], AppContext]], None]
 def register_all_tools(
     mcp: FastMCP[AppContext],
     app_ctx_factory: Callable[[], AppContext],
+    settings: Settings,
 ) -> None:
     """Register every tool module against ``mcp``.
 
@@ -67,6 +68,8 @@ def register_all_tools(
     # Imports are local so individual tool modules don't trigger circular
     # imports of this module at package import time.
     from ibkr_mcp.tools import account as account_tools
+    from ibkr_mcp.tools import contracts as contract_tools
+    from ibkr_mcp.tools import flex as flex_tools
     from ibkr_mcp.tools import market as market_tools
     from ibkr_mcp.tools import orders as order_tools
     from ibkr_mcp.tools import server as server_tool
@@ -75,6 +78,9 @@ def register_all_tools(
     account_tools.register(mcp)
     market_tools.register(mcp)
     order_tools.register(mcp)
+    contract_tools.register(mcp)
+    # Flex query tools are only registered when a token is configured.
+    flex_tools.register_if_enabled(mcp, settings)
 
 
 def build_lifespan(
@@ -139,5 +145,5 @@ def build_mcp(settings: Settings | None = None) -> FastMCP[AppContext]:
             "read it from ctx.request_context.lifespan_context."
         )
 
-    register_all_tools(mcp, _app_ctx_factory)
+    register_all_tools(mcp, _app_ctx_factory, settings)
     return mcp

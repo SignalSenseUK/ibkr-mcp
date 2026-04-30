@@ -473,6 +473,37 @@ class FakeTrade:
         self.log = list(log or [])
 
 
+class FakeContractDetails:
+    """Stand-in for ``ib_async.ContractDetails``."""
+
+    def __init__(
+        self,
+        *,
+        contract: FakeContract,
+        marketName: str | None = None,
+        validExchanges: str | None = None,
+        longName: str | None = None,
+        industry: str | None = None,
+        category: str | None = None,
+        subcategory: str | None = None,
+        tradingHours: str | None = None,
+        liquidHours: str | None = None,
+        timeZoneId: str | None = None,
+        realExpirationDate: str | None = None,
+    ) -> None:
+        self.contract = contract
+        self.marketName = marketName
+        self.validExchanges = validExchanges
+        self.longName = longName
+        self.industry = industry
+        self.category = category
+        self.subcategory = subcategory
+        self.tradingHours = tradingHours
+        self.liquidHours = liquidHours
+        self.timeZoneId = timeZoneId
+        self.realExpirationDate = realExpirationDate
+
+
 def make_option_position(
     *,
     account: str = "U1234567",

@@ -69,6 +69,15 @@ class Settings(BaseSettings):
     IB_ACCOUNT: str | None = Field(default=None)
     IB_PAPER_TRADING: bool = Field(default=True)
     IB_FLEX_TOKEN: str | None = Field(default=None)
+    IB_FLEX_QUERIES: str | None = Field(
+        default=None,
+        description=(
+            "Optional JSON-encoded list of known Flex query definitions, e.g. "
+            '`[{"queryId":"12345","queryName":"Daily P&L","type":"Statement"}]`. '
+            "Used by ``list_flex_queries`` (IB's Flex Web Service does not "
+            "expose query enumeration) and to resolve ``queryName`` aliases."
+        ),
+    )
     IB_MARKET_DATA_TYPE: MarketDataType = Field(default=MarketDataType.LIVE)
 
     # --- MCP transport --------------------------------------------------------
