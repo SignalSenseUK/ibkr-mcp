@@ -87,8 +87,8 @@ class TestGetMarketData:
         assert payload["bidSize"] == 400
         assert payload["volume"] == 45_000_000
         # No option fields for an equity request.
-        assert payload["delta"] is None
-        assert payload["impliedVolatility"] is None
+        assert payload.get("delta") is None
+        assert payload.get("impliedVolatility") is None
 
     async def test_option_includes_greeks_via_model_priority(
         self, fake_ib: FakeIB, settings_factory: Callable[..., Settings]

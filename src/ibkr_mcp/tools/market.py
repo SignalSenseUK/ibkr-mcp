@@ -149,7 +149,7 @@ async def get_market_data(
         payload["openInterest"] = _safe_float(getattr(ticker, "openInterest", None))
         payload.update(_extract_greeks(ticker))
 
-    return MarketDataResponse.model_validate(payload).model_dump_json()
+    return MarketDataResponse.model_validate(payload).model_dump_json(exclude_none=True)
 
 
 # ============================================================ get_historical_data
@@ -231,7 +231,7 @@ async def get_historical_data(
         barSize=barSize,
         bars=serialised,
     )
-    return response.model_dump_json()
+    return response.model_dump_json(exclude_none=True)
 
 
 def register(mcp: FastMCP[AppContext]) -> None:

@@ -122,8 +122,8 @@ class TestGetAccountInfo:
         payload = json.loads(await get_account_info(ctx))
 
         assert payload["netLiquidation"] == 100_000.0
-        assert payload["buyingPower"] is None
-        assert payload["maintMarginReq"] is None
+        assert payload.get("buyingPower") is None
+        assert payload.get("maintMarginReq") is None
 
     async def test_no_account_linked_returns_account_not_found(
         self, fake_ib: FakeIB, settings_factory: Callable[..., Settings]
@@ -171,10 +171,10 @@ class TestGetPositions:
         assert pos["marketPrice"] == 150.50
         assert pos["unrealizedPnL"] == pytest.approx(530.0)
         # Stock positions must NOT include option fields populated.
-        assert pos["right"] is None
-        assert pos["strike"] is None
-        assert pos["expiry"] is None
-        assert pos["multiplier"] is None
+        assert pos.get("right") is None
+        assert pos.get("strike") is None
+        assert pos.get("expiry") is None
+        assert pos.get("multiplier") is None
 
     async def test_option_position_includes_all_option_fields(
         self, fake_ib: FakeIB, settings_factory: Callable[..., Settings]
@@ -260,7 +260,7 @@ class TestGetPositions:
         assert pos["symbol"] == "GOOG"
         assert pos["avgCost"] == 2700.0
         # Fallback path doesn't have market data — fields default to None.
-        assert pos["marketPrice"] is None
+        assert pos.get("marketPrice") is None
 
     async def test_empty_portfolio_returns_empty_list(
         self, fake_ib: FakeIB, settings_factory: Callable[..., Settings]

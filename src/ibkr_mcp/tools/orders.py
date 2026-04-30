@@ -186,7 +186,7 @@ async def get_order_status(
         if order is None:
             continue
         if int(getattr(order, "orderId", -1) or -1) == int(orderId):
-            return _trade_to_status(trade).model_dump_json()
+            return _trade_to_status(trade).model_dump_json(exclude_none=True)
 
     return make_error(
         ErrorCode.VALIDATION_ERROR,
@@ -244,7 +244,7 @@ async def get_live_orders(
         timestamp=datetime.now(UTC),
         orders=orders,
     )
-    return response.model_dump_json()
+    return response.model_dump_json(exclude_none=True)
 
 
 def register(mcp: FastMCP[AppContext]) -> None:

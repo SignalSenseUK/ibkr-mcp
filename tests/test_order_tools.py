@@ -126,7 +126,7 @@ class TestGetOrderStatus:
 
         assert payload["orderType"] == "LMT"
         assert payload["limitPrice"] == 380.0
-        assert payload["stopPrice"] is None
+        assert payload.get("stopPrice") is None
 
     async def test_stop_order_includes_stop_price(
         self, fake_ib: FakeIB, settings_factory: Callable[..., Settings]
@@ -150,7 +150,7 @@ class TestGetOrderStatus:
 
         assert payload["orderType"] == "STP"
         assert payload["stopPrice"] == 350.0
-        assert payload["limitPrice"] is None
+        assert payload.get("limitPrice") is None
 
     async def test_unknown_order_id(
         self, fake_ib: FakeIB, settings_factory: Callable[..., Settings]
@@ -178,8 +178,8 @@ class TestGetOrderStatus:
 
         payload = json.loads(await get_order_status(ctx, orderId=4004))
 
-        assert payload["commission"] is None
-        assert payload["filledAt"] is None
+        assert payload.get("commission") is None
+        assert payload.get("filledAt") is None
 
 
 # ============================================================ get_live_orders

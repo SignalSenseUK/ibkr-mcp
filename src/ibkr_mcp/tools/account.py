@@ -111,7 +111,7 @@ async def get_account_info(
             continue
         payload[field] = _safe_float(getattr(row, "value", None))
 
-    return AccountInfoResponse.model_validate(payload).model_dump_json()
+    return AccountInfoResponse.model_validate(payload).model_dump_json(exclude_none=True)
 
 
 # --------------------------------------------------------------- get_positions
@@ -214,7 +214,7 @@ async def get_positions(
         timestamp=datetime.now(UTC),
         positions=items,
     )
-    return response.model_dump_json()
+    return response.model_dump_json(exclude_none=True)
 
 
 def register(mcp: FastMCP[AppContext]) -> None:
