@@ -72,6 +72,7 @@ ignore = [
 # output schema (which mirrors the IBKR API). This is intentional.
 "src/ibkr_mcp/models/*.py" = ["N815"]
 "src/ibkr_mcp/tools/*.py" = ["N803", "N815"]
+"src/ibkr_mcp/utils/*.py" = ["N803"]
 
 [tool.ruff.format]
 quote-style = "double"

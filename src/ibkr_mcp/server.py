@@ -67,10 +67,14 @@ def register_all_tools(
     # Imports are local so individual tool modules don't trigger circular
     # imports of this module at package import time.
     from ibkr_mcp.tools import account as account_tools
+    from ibkr_mcp.tools import market as market_tools
+    from ibkr_mcp.tools import orders as order_tools
     from ibkr_mcp.tools import server as server_tool
 
     server_tool.register(mcp)
     account_tools.register(mcp)
+    market_tools.register(mcp)
+    order_tools.register(mcp)
 
 
 def build_lifespan(

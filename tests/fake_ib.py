@@ -320,6 +320,159 @@ def make_stock_position(
     )
 
 
+class FakeGreeks:
+    """Stand-in for ``ib_async.OptionComputation`` used in Ticker.*Greeks."""
+
+    def __init__(
+        self,
+        *,
+        delta: float | None = None,
+        gamma: float | None = None,
+        theta: float | None = None,
+        vega: float | None = None,
+        impliedVol: float | None = None,
+    ) -> None:
+        self.delta = delta
+        self.gamma = gamma
+        self.theta = theta
+        self.vega = vega
+        self.impliedVol = impliedVol
+
+
+class FakeTicker:
+    """Stand-in for ``ib_async.Ticker`` populated lazily by tests."""
+
+    def __init__(self, **fields: Any) -> None:
+        # Defaults reflect ib_async, which uses NaN for "no data".
+        defaults: dict[str, Any] = {
+            "contract": None,
+            "last": None,
+            "bid": None,
+            "ask": None,
+            "bidSize": None,
+            "askSize": None,
+            "volume": None,
+            "high": None,
+            "low": None,
+            "open": None,
+            "close": None,
+            "openInterest": None,
+            "modelGreeks": None,
+            "lastGreeks": None,
+            "bidGreeks": None,
+            "askGreeks": None,
+        }
+        defaults.update(fields)
+        for key, value in defaults.items():
+            setattr(self, key, value)
+
+
+class FakeHistoricalBar:
+    """Stand-in for ``ib_async.BarData``."""
+
+    def __init__(
+        self,
+        *,
+        date: Any,
+        open: float,
+        high: float,
+        low: float,
+        close: float,
+        volume: float,
+        average: float | None = None,
+        barCount: int | None = None,
+    ) -> None:
+        self.date = date
+        self.open = open
+        self.high = high
+        self.low = low
+        self.close = close
+        self.volume = volume
+        self.average = average
+        self.barCount = barCount
+
+
+class FakeOrder:
+    """Stand-in for ``ib_async.Order``."""
+
+    def __init__(
+        self,
+        *,
+        orderId: int,
+        action: str = "BUY",
+        totalQuantity: float = 0,
+        orderType: str = "MKT",
+        lmtPrice: float = 0.0,
+        auxPrice: float = 0.0,
+        account: str = "U1234567",
+    ) -> None:
+        self.orderId = orderId
+        self.action = action
+        self.totalQuantity = totalQuantity
+        self.orderType = orderType
+        self.lmtPrice = lmtPrice
+        self.auxPrice = auxPrice
+        self.account = account
+
+
+class FakeOrderStatus:
+    """Stand-in for ``ib_async.OrderStatus``."""
+
+    def __init__(
+        self,
+        *,
+        status: str = "Submitted",
+        filled: float = 0.0,
+        avgFillPrice: float = 0.0,
+    ) -> None:
+        self.status = status
+        self.filled = filled
+        self.avgFillPrice = avgFillPrice
+
+
+class FakeCommissionReport:
+    """Stand-in for ``ib_async.CommissionReport``."""
+
+    def __init__(self, *, commission: float = 0.0, currency: str = "USD") -> None:
+        self.commission = commission
+        self.currency = currency
+
+
+class FakeFill:
+    """Stand-in for ``ib_async.Fill``."""
+
+    def __init__(self, *, commissionReport: FakeCommissionReport | None = None) -> None:
+        self.commissionReport = commissionReport
+
+
+class FakeTradeLogEntry:
+    """Stand-in for ``ib_async.TradeLogEntry``."""
+
+    def __init__(self, *, time: Any, status: str = "", message: str = "") -> None:
+        self.time = time
+        self.status = status
+        self.message = message
+
+
+class FakeTrade:
+    """Stand-in for ``ib_async.Trade``."""
+
+    def __init__(
+        self,
+        *,
+        contract: FakeContract,
+        order: FakeOrder,
+        orderStatus: FakeOrderStatus | None = None,
+        fills: list[FakeFill] | None = None,
+        log: list[FakeTradeLogEntry] | None = None,
+    ) -> None:
+        self.contract = contract
+        self.order = order
+        self.orderStatus = orderStatus or FakeOrderStatus()
+        self.fills = list(fills or [])
+        self.log = list(log or [])
+
+
 def make_option_position(
     *,
     account: str = "U1234567",
