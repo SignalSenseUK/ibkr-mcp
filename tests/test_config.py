@@ -19,14 +19,6 @@ from ibkr_mcp.config import (
 )
 
 
-@pytest.fixture(autouse=True)
-def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Strip every IB_*/MCP_*/LOG_* env var so tests are deterministic."""
-    for key in list(__import__("os").environ):
-        if key.startswith(("IB_", "MCP_", "LOG_")):
-            monkeypatch.delenv(key, raising=False)
-
-
 def _make_settings(env_file: Path | None = None, **overrides: object) -> Settings:
     """Build a Settings instance with an explicit ``.env`` path or no file at all."""
     return Settings(_env_file=env_file or "/dev/null", **overrides)  # type: ignore[arg-type, call-arg]

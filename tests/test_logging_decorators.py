@@ -13,13 +13,6 @@ from ibkr_mcp.errors import ErrorCode, make_error
 from ibkr_mcp.logging_decorators import tool_call_logger, tool_error_handler
 
 
-@pytest.fixture(autouse=True)
-def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key in list(__import__("os").environ):
-        if key.startswith(("IB_", "MCP_", "LOG_")):
-            monkeypatch.delenv(key, raising=False)
-
-
 @pytest.fixture
 def captured_logs() -> list[dict[str, object]]:
     """Capture structlog events emitted by the decorators."""
