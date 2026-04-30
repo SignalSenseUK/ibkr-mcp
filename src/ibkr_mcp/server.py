@@ -59,10 +59,18 @@ def register_all_tools(
     """Register every tool module against ``mcp``.
 
     Subsequent milestones append calls into this function so the registration
-    order is explicit and central. Kept empty for Milestone 2.
+    order is explicit and central.
     """
 
-    del mcp, app_ctx_factory  # nothing registered yet
+    del app_ctx_factory  # tools read AppContext from ctx.request_context
+
+    # Imports are local so individual tool modules don't trigger circular
+    # imports of this module at package import time.
+    from ibkr_mcp.tools import account as account_tools
+    from ibkr_mcp.tools import server as server_tool
+
+    server_tool.register(mcp)
+    account_tools.register(mcp)
 
 
 def build_lifespan(

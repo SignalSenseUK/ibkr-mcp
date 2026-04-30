@@ -13,6 +13,7 @@ Public attributes (mutable, set per-test) drive the canned responses:
 * ``market_data_type_calls``    — list of ints captured from ``reqMarketDataType``
 * ``account_summary``           — list returned by ``accountSummaryAsync``
 * ``positions_data``            — list returned by ``reqPositionsAsync``/``positions``
+* ``portfolio_data``            — list returned by ``portfolio()`` (rich fields)
 * ``tickers``                   — list returned by ``reqTickersAsync``
 * ``historical_bars``           — list returned by ``reqHistoricalDataAsync``
 * ``contract_details``          — list returned by ``reqContractDetailsAsync``
@@ -50,6 +51,7 @@ class FakeIB:
         # data caches consumed by tools (populated as needed by tests)
         self.account_summary: list[Any] = []
         self.positions_data: list[Any] = []
+        self.portfolio_data: list[Any] = []
         self.tickers: list[Any] = []
         self.historical_bars: list[Any] = []
         self.contract_details: list[Any] = []
@@ -104,6 +106,12 @@ class FakeIB:
 
     def positions(self, account: str = "") -> list[Any]:
         return list(self.positions_data)
+
+    def portfolio(self, account: str = "") -> list[Any]:
+        items = self.portfolio_data
+        if account:
+            return [item for item in items if getattr(item, "account", account) == account]
+        return list(items)
 
     # --------------------------------------------------------------- market data
     async def reqTickersAsync(self, *contracts: Any) -> list[Any]:
@@ -213,3 +221,140 @@ class _AccountValue:
         self.tag = tag
         self.value = value
         self.currency = currency
+
+
+class FakeContract:
+    """Minimal stand-in for ``ib_async.Contract`` populated as tests need it."""
+
+    def __init__(
+        self,
+        *,
+        secType: str = "STK",
+        symbol: str = "",
+        exchange: str | None = "SMART",
+        currency: str | None = "USD",
+        conId: int | None = None,
+        right: str | None = None,
+        strike: float | None = None,
+        lastTradeDateOrContractMonth: str | None = None,
+        multiplier: str | None = None,
+    ) -> None:
+        self.secType = secType
+        self.symbol = symbol
+        self.exchange = exchange
+        self.currency = currency
+        self.conId = conId
+        self.right = right
+        self.strike = strike
+        self.lastTradeDateOrContractMonth = lastTradeDateOrContractMonth
+        self.multiplier = multiplier
+
+
+class FakePortfolioItem:
+    """Stand-in for ``ib_async.PortfolioItem``."""
+
+    def __init__(
+        self,
+        *,
+        contract: FakeContract,
+        position: float,
+        marketPrice: float | None = None,
+        marketValue: float | None = None,
+        averageCost: float | None = None,
+        unrealizedPNL: float | None = None,
+        realizedPNL: float | None = None,
+        account: str = "U1234567",
+    ) -> None:
+        self.contract = contract
+        self.position = position
+        self.marketPrice = marketPrice
+        self.marketValue = marketValue
+        self.averageCost = averageCost
+        self.unrealizedPNL = unrealizedPNL
+        self.realizedPNL = realizedPNL
+        self.account = account
+
+
+class FakePosition:
+    """Stand-in for ``ib_async.Position`` (basic positions, no market data)."""
+
+    def __init__(
+        self,
+        *,
+        account: str,
+        contract: FakeContract,
+        position: float,
+        avgCost: float | None = None,
+    ) -> None:
+        self.account = account
+        self.contract = contract
+        self.position = position
+        self.avgCost = avgCost
+
+
+def make_stock_position(
+    *,
+    account: str = "U1234567",
+    symbol: str = "AAPL",
+    quantity: float = 100,
+    avg_cost: float = 145.20,
+    market_price: float = 150.50,
+    con_id: int = 265598,
+) -> FakePortfolioItem:
+    """Build a stock-position ``PortfolioItem`` for ``portfolio()`` tests."""
+    return FakePortfolioItem(
+        contract=FakeContract(
+            secType="STK",
+            symbol=symbol,
+            exchange="SMART",
+            currency="USD",
+            conId=con_id,
+        ),
+        position=quantity,
+        marketPrice=market_price,
+        marketValue=market_price * quantity,
+        averageCost=avg_cost,
+        unrealizedPNL=(market_price - avg_cost) * quantity,
+        realizedPNL=0.0,
+        account=account,
+    )
+
+
+def make_option_position(
+    *,
+    account: str = "U1234567",
+    symbol: str = "AAPL",
+    quantity: float = -5,
+    strike: float = 150.0,
+    right: str = "C",
+    expiry: str = "20260516",
+    multiplier: str = "100",
+    avg_cost: float = 320.0,
+    market_price: float = 3.50,
+    con_id: int = 4123456,
+) -> FakePortfolioItem:
+    """Build an option-position ``PortfolioItem``."""
+    contract = FakeContract(
+        secType="OPT",
+        symbol=symbol,
+        exchange="SMART",
+        currency="USD",
+        conId=con_id,
+        right=right,
+        strike=strike,
+        lastTradeDateOrContractMonth=expiry,
+        multiplier=multiplier,
+    )
+    # IB reports option market_value as price * quantity * multiplier.
+    mult = int(multiplier)
+    market_value = market_price * quantity * mult
+    return FakePortfolioItem(
+        contract=contract,
+        position=quantity,
+        marketPrice=market_price,
+        marketValue=market_value,
+        averageCost=avg_cost,
+        unrealizedPNL=(market_price * mult - avg_cost) * quantity,
+        realizedPNL=0.0,
+        account=account,
+    )

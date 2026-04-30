@@ -66,7 +66,12 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["N802", "N803"] # allow camelCase in tests for IB API mirroring
+# Tests mirror ib_async/IBKR camelCase identifiers in mocks and fixtures.
+"tests/**/*.py" = ["N802", "N803", "N815"]
+# Models and tools deliberately use camelCase fields to match the spec's JSON
+# output schema (which mirrors the IBKR API). This is intentional.
+"src/ibkr_mcp/models/*.py" = ["N815"]
+"src/ibkr_mcp/tools/*.py" = ["N803", "N815"]
 
 [tool.ruff.format]
 quote-style = "double"
