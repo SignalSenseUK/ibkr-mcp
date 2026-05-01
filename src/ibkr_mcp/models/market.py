@@ -70,3 +70,46 @@ class HistoricalDataResponse(BaseModel):
     secType: str
     barSize: str
     bars: list[HistoricalBar]
+
+
+class OptionChainDiscovery(BaseModel):
+    """``get_option_chain`` discovery payload (spec §6.8 — no ``expiry``)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    underlying: str
+    exchanges: list[str]
+    expirations: list[str]
+    strikes: list[float]
+    multiplier: int
+
+
+class OptionChainStrike(BaseModel):
+    """Per-contract data for a single strike in an expanded option chain."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    strike: float
+    right: str
+    conId: int | None = Field(default=None)
+    lastPrice: float | None = Field(default=None)
+    bid: float | None = Field(default=None)
+    ask: float | None = Field(default=None)
+    volume: float | None = Field(default=None)
+    openInterest: float | None = Field(default=None)
+    impliedVolatility: float | None = Field(default=None)
+    delta: float | None = Field(default=None)
+    gamma: float | None = Field(default=None)
+    theta: float | None = Field(default=None)
+    vega: float | None = Field(default=None)
+
+
+class OptionChainResponse(BaseModel):
+    """``get_option_chain`` full-chain payload (spec §6.8 — with ``expiry``)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    underlying: str
+    expiry: str
+    multiplier: int
+    chains: list[OptionChainStrike]

@@ -42,3 +42,34 @@ class PositionsResponse(BaseModel):
     account: str
     timestamp: datetime
     positions: list[PositionItem]
+
+
+class PortfolioGreekItem(BaseModel):
+    """One line in the per-position Greek breakdown (spec §6.8)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    symbol: str
+    expiry: str
+    strike: float
+    right: str
+    position: float
+    delta: float | None = Field(default=None)
+    gamma: float | None = Field(default=None)
+    theta: float | None = Field(default=None)
+    vega: float | None = Field(default=None)
+    source: str = Field(default="model")
+
+
+class PortfolioGreeksResponse(BaseModel):
+    """Aggregate response shape for ``get_portfolio_greeks`` (spec §6.8)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    account: str
+    timestamp: datetime
+    totalDelta: float = 0.0
+    totalGamma: float = 0.0
+    totalTheta: float = 0.0
+    totalVega: float = 0.0
+    positions: list[PortfolioGreekItem]

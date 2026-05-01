@@ -10,8 +10,14 @@ from mcp.server.fastmcp import Context, FastMCP
 from ibkr_mcp.errors import ErrorCode, make_error
 from ibkr_mcp.logging_decorators import tool_call_logger, tool_error_handler
 from ibkr_mcp.models.account import AccountInfoResponse
-from ibkr_mcp.models.positions import PositionItem, PositionsResponse
+from ibkr_mcp.models.positions import (
+    PortfolioGreekItem,
+    PortfolioGreeksResponse,
+    PositionItem,
+    PositionsResponse,
+)
 from ibkr_mcp.server import AppContext
+from ibkr_mcp.utils.black_scholes import fallback_greeks
 
 # Map IB ``AccountValue.tag`` to the response field. Only these tags are
 # extracted; everything else returned by ``accountSummaryAsync`` is ignored.
@@ -217,7 +223,185 @@ async def get_positions(
     return response.model_dump_json(exclude_none=True)
 
 
+# --------------------------------------------------------------- get_portfolio_greeks
+_GREEKS_PRIORITY: tuple[str, ...] = (
+    "modelGreeks",
+    "lastGreeks",
+    "bidGreeks",
+    "askGreeks",
+)
+
+
+def _greeks_from_ticker(ticker: Any) -> tuple[dict[str, float] | None, float | None]:
+    """Pull (greeks, last_iv) from a ticker following the spec §2.7 priority.
+
+    Returns ``(None, last_iv_if_available)`` when no priority bundle has any
+    Greeks — callers can then attempt the BS fallback using the last IV.
+    """
+    last_iv: float | None = None
+    for attr in _GREEKS_PRIORITY:
+        bundle = getattr(ticker, attr, None)
+        if bundle is None:
+            continue
+        delta = _safe_float(getattr(bundle, "delta", None))
+        gamma = _safe_float(getattr(bundle, "gamma", None))
+        theta = _safe_float(getattr(bundle, "theta", None))
+        vega = _safe_float(getattr(bundle, "vega", None))
+        iv = _safe_float(getattr(bundle, "impliedVol", None))
+        if last_iv is None and iv is not None:
+            last_iv = iv
+        if any(v is not None for v in (delta, gamma, theta, vega)):
+            return (
+                {
+                    "delta": delta or 0.0,
+                    "gamma": gamma or 0.0,
+                    "theta": theta or 0.0,
+                    "vega": vega or 0.0,
+                },
+                iv if iv is not None else last_iv,
+            )
+    return None, last_iv
+
+
+def _underlying_spot(ticker: Any) -> float | None:
+    """Best-effort underlying spot extracted from a ticker bundle."""
+    for attr in ("modelGreeks", "lastGreeks"):
+        bundle = getattr(ticker, attr, None)
+        if bundle is None:
+            continue
+        spot = _safe_float(getattr(bundle, "undPrice", None))
+        if spot is not None:
+            return spot
+    return None
+
+
+@tool_error_handler
+@tool_call_logger
+async def get_portfolio_greeks(
+    ctx: Context,  # type: ignore[type-arg]
+    accountId: str | None = None,
+) -> str:
+    """Get aggregated Greeks (delta, gamma, theta, vega) across all option positions in the portfolio. Also returns per-position Greek breakdowns. Useful for understanding overall portfolio risk exposure from options."""
+
+    app_ctx: AppContext = ctx.request_context.lifespan_context
+    if not app_ctx.manager.is_connected:
+        return make_error(ErrorCode.IB_NOT_CONNECTED, "Not connected to IB Gateway.")
+
+    account, err = _resolve_account(app_ctx, accountId)
+    if err is not None:
+        return make_error(ErrorCode.IB_ACCOUNT_NOT_FOUND, err)
+    if account is None:
+        return make_error(
+            ErrorCode.IB_ACCOUNT_NOT_FOUND,
+            "No account is linked to this Gateway connection.",
+        )
+
+    ib = app_ctx.manager.ib
+
+    # Pull option positions for the requested account.
+    portfolio_items: list[Any] = []
+    try:
+        portfolio_items = list(ib.portfolio() or [])
+    except Exception:
+        portfolio_items = []
+
+    option_items: list[Any] = []
+    for item in portfolio_items:
+        contract = getattr(item, "contract", None)
+        if contract is None:
+            continue
+        if str(getattr(contract, "secType", "") or "") not in {"OPT", "FOP"}:
+            continue
+        if getattr(item, "account", account) != account:
+            continue
+        option_items.append(item)
+
+    breakdown: list[PortfolioGreekItem] = []
+    totals = {"delta": 0.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0}
+    now = datetime.now(UTC)
+
+    if option_items:
+        contracts = [item.contract for item in option_items]
+        async with app_ctx.ib_lock:
+            tickers = await ib.reqTickersAsync(*contracts)
+
+        # Map contracts back to tickers via input order.
+        for item, ticker in zip(option_items, tickers or [], strict=False):
+            contract = item.contract
+            position = _safe_float(getattr(item, "position", 0.0)) or 0.0
+            multiplier = _safe_int(getattr(contract, "multiplier", None)) or 100
+
+            greeks, last_iv = _greeks_from_ticker(ticker)
+            source = "model"
+            if greeks is None:
+                # Try BS fallback when last IV is known.
+                spot = _underlying_spot(ticker) or _safe_float(getattr(item, "marketPrice", None))
+                bs = fallback_greeks(
+                    right=str(getattr(contract, "right", "") or ""),
+                    spot=spot,
+                    strike=_safe_float(getattr(contract, "strike", None)),
+                    expiry_yyyymmdd=str(getattr(contract, "lastTradeDateOrContractMonth", "") or "")
+                    or None,
+                    iv=last_iv,
+                    valuation_date=now,
+                )
+                if bs is None:
+                    breakdown.append(
+                        PortfolioGreekItem(
+                            symbol=str(getattr(contract, "symbol", "") or ""),
+                            expiry=str(getattr(contract, "lastTradeDateOrContractMonth", "") or ""),
+                            strike=_safe_float(getattr(contract, "strike", None)) or 0.0,
+                            right=str(getattr(contract, "right", "") or ""),
+                            position=position,
+                            source="missing",
+                        )
+                    )
+                    continue
+                greeks = bs
+                source = "fallback"
+
+            # Aggregate position-weighted Greeks. Multiplier is per spec
+            # convention (100 for equity options).
+            weight = position * float(multiplier)
+            position_delta = greeks["delta"] * weight
+            position_gamma = greeks["gamma"] * weight
+            position_theta = greeks["theta"] * weight
+            position_vega = greeks["vega"] * weight
+
+            totals["delta"] += position_delta
+            totals["gamma"] += position_gamma
+            totals["theta"] += position_theta
+            totals["vega"] += position_vega
+
+            breakdown.append(
+                PortfolioGreekItem(
+                    symbol=str(getattr(contract, "symbol", "") or ""),
+                    expiry=str(getattr(contract, "lastTradeDateOrContractMonth", "") or ""),
+                    strike=_safe_float(getattr(contract, "strike", None)) or 0.0,
+                    right=str(getattr(contract, "right", "") or ""),
+                    position=position,
+                    delta=position_delta,
+                    gamma=position_gamma,
+                    theta=position_theta,
+                    vega=position_vega,
+                    source=source,
+                )
+            )
+
+    response = PortfolioGreeksResponse(
+        account=account,
+        timestamp=now,
+        totalDelta=totals["delta"],
+        totalGamma=totals["gamma"],
+        totalTheta=totals["theta"],
+        totalVega=totals["vega"],
+        positions=breakdown,
+    )
+    return response.model_dump_json(exclude_none=True)
+
+
 def register(mcp: FastMCP[AppContext]) -> None:
     """Attach :func:`get_account_info` and :func:`get_positions` to ``mcp``."""
     mcp.tool()(get_account_info)
     mcp.tool()(get_positions)
+    mcp.tool()(get_portfolio_greeks)

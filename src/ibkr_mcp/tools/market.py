@@ -13,6 +13,9 @@ from ibkr_mcp.models.market import (
     HistoricalBar,
     HistoricalDataResponse,
     MarketDataResponse,
+    OptionChainDiscovery,
+    OptionChainResponse,
+    OptionChainStrike,
 )
 from ibkr_mcp.server import AppContext
 from ibkr_mcp.utils.contracts import build_contract
@@ -234,7 +237,173 @@ async def get_historical_data(
     return response.model_dump_json(exclude_none=True)
 
 
+# ============================================================ get_option_chain
+def _safe_int(value: Any, default: int = 100) -> int:
+    """Coerce IB's str/int multiplier representation to an ``int``."""
+    if value is None or value == "":
+        return default
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+@tool_error_handler
+@tool_call_logger
+async def get_option_chain(
+    ctx: Context,  # type: ignore[type-arg]
+    symbol: str,
+    exchange: str = "SMART",
+    currency: str = "USD",
+    expiry: str | None = None,
+    right: str | None = None,
+) -> str:
+    """Fetch the option chain for an underlying symbol. Without an expiry date, returns available expirations and strikes (discovery mode). With an expiry date, returns full per-contract data including bid, ask, volume, open interest, and Greeks for each strike."""
+
+    app_ctx: AppContext = ctx.request_context.lifespan_context
+    if not app_ctx.manager.is_connected:
+        return make_error(ErrorCode.IB_NOT_CONNECTED, "Not connected to IB Gateway.")
+
+    ib = app_ctx.manager.ib
+
+    # 1) Resolve the underlying so we have a conId for ``reqSecDefOptParamsAsync``.
+    try:
+        underlying = build_contract(
+            symbol=symbol,
+            secType="STK",
+            exchange=exchange,
+            currency=currency,
+        )
+    except ValueError as exc:
+        return make_error(ErrorCode.IB_INVALID_CONTRACT, str(exc))
+
+    async with app_ctx.ib_lock:
+        qualified = await ib.qualifyContractsAsync(underlying)
+        qualified_list: list[Any] = list(qualified) if isinstance(qualified, list) else [qualified]
+        resolved: Any = next((q for q in qualified_list if q is not None), None)
+        if resolved is None:
+            return make_error(
+                ErrorCode.IB_INVALID_CONTRACT,
+                f"Could not qualify underlying {symbol!r}.",
+            )
+        params = await ib.reqSecDefOptParamsAsync(
+            underlyingSymbol=symbol,
+            futFopExchange="",
+            underlyingSecType="STK",
+            underlyingConId=int(getattr(resolved, "conId", 0) or 0),
+        )
+
+    if not params:
+        return make_error(
+            ErrorCode.IB_NO_MARKET_DATA,
+            f"No option chain available for {symbol!r}.",
+        )
+
+    # Aggregate exchanges/expirations/strikes across the returned chains.
+    exchanges = sorted(
+        {str(getattr(p, "exchange", "")) for p in params if getattr(p, "exchange", None)}
+    )
+    expirations: set[str] = set()
+    strikes: set[float] = set()
+    multiplier_default = 100
+    for chain in params:
+        for exp in getattr(chain, "expirations", None) or []:
+            expirations.add(str(exp))
+        for strike in getattr(chain, "strikes", None) or []:
+            try:
+                strikes.add(float(strike))
+            except (TypeError, ValueError):
+                continue
+        multiplier_default = _safe_int(getattr(chain, "multiplier", None), multiplier_default)
+
+    # ---------- Discovery mode (no expiry): NEVER fetch per-contract data. -----
+    if not expiry:
+        return OptionChainDiscovery(
+            underlying=symbol,
+            exchanges=exchanges,
+            expirations=sorted(expirations),
+            strikes=sorted(strikes),
+            multiplier=multiplier_default,
+        ).model_dump_json(exclude_none=True)
+
+    # ---------- Full chain mode (with expiry): fetch per-strike snapshots. ----
+    if expiry not in expirations:
+        return make_error(
+            ErrorCode.IB_INVALID_CONTRACT,
+            f"Expiry {expiry!r} is not in the available chain for {symbol!r}.",
+        )
+
+    rights: tuple[str, ...]
+    if right is None:
+        rights = ("C", "P")
+    elif right.upper() in {"C", "P"}:
+        rights = (right.upper(),)
+    else:
+        return make_error(
+            ErrorCode.VALIDATION_ERROR,
+            f"`right` must be one of 'C', 'P', or omitted; got {right!r}.",
+        )
+
+    sorted_strikes = sorted(strikes)
+
+    # Build a Contract per (strike, right). build_contract enforces required
+    # fields and raises on bad combos.
+    contracts: list[Any] = []
+    descriptors: list[tuple[float, str]] = []
+    for strike in sorted_strikes:
+        for r in rights:
+            try:
+                c = build_contract(
+                    symbol=symbol,
+                    secType="OPT",
+                    exchange=exchange,
+                    currency=currency,
+                    expiry=expiry,
+                    strike=strike,
+                    right=r,
+                )
+            except ValueError as exc:
+                return make_error(ErrorCode.IB_INVALID_CONTRACT, str(exc))
+            contracts.append(c)
+            descriptors.append((strike, r))
+
+    async with app_ctx.ib_lock:
+        # Single batched snapshot — never streaming. ib_async returns one
+        # ticker per contract in input order.
+        tickers = await ib.reqTickersAsync(*contracts)
+
+    chains: list[OptionChainStrike] = []
+    for (strike, r), ticker in zip(descriptors, tickers or [], strict=False):
+        contract_obj = getattr(ticker, "contract", None)
+        greeks = _extract_greeks(ticker)
+        chains.append(
+            OptionChainStrike(
+                strike=strike,
+                right=r,
+                conId=int(getattr(contract_obj, "conId", 0) or 0) or None,
+                lastPrice=_safe_float(getattr(ticker, "last", None)),
+                bid=_safe_float(getattr(ticker, "bid", None)),
+                ask=_safe_float(getattr(ticker, "ask", None)),
+                volume=_safe_float(getattr(ticker, "volume", None)),
+                openInterest=_safe_float(getattr(ticker, "openInterest", None)),
+                impliedVolatility=greeks["impliedVolatility"],
+                delta=greeks["delta"],
+                gamma=greeks["gamma"],
+                theta=greeks["theta"],
+                vega=greeks["vega"],
+            )
+        )
+
+    return OptionChainResponse(
+        underlying=symbol,
+        expiry=expiry,
+        multiplier=multiplier_default,
+        chains=chains,
+    ).model_dump_json(exclude_none=True)
+
+
 def register(mcp: FastMCP[AppContext]) -> None:
     """Attach the market-data tools to ``mcp``."""
     mcp.tool()(get_market_data)
     mcp.tool()(get_historical_data)
+    mcp.tool()(get_option_chain)

@@ -247,7 +247,28 @@ async def get_live_orders(
     return response.model_dump_json(exclude_none=True)
 
 
+# ============================================================ get_alerts (P2)
+@tool_error_handler
+@tool_call_logger
+async def get_alerts(
+    ctx: Context,  # type: ignore[type-arg]
+    accountId: str | None = None,
+) -> str:
+    """List active price and condition alerts configured for the account. Returns alert names, conditions, and status."""
+
+    # Spec §6.8 explicitly flags this tool as "pending feasibility validation"
+    # because ``ib_async`` does not surface user-defined alerts. We register
+    # the tool so MCP clients can discover it, but we always return
+    # NOT_IMPLEMENTED until upstream support is confirmed.
+    del ctx, accountId
+    return make_error(
+        ErrorCode.NOT_IMPLEMENTED,
+        "get_alerts requires feasibility validation against ib_async; see spec §6.8.",
+    )
+
+
 def register(mcp: FastMCP[AppContext]) -> None:
     """Attach the order-monitoring tools to ``mcp``."""
     mcp.tool()(get_order_status)
     mcp.tool()(get_live_orders)
+    mcp.tool()(get_alerts)

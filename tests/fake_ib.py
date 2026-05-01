@@ -473,6 +473,27 @@ class FakeTrade:
         self.log = list(log or [])
 
 
+class FakeOptionChain:
+    """Stand-in for ``ib_async.OptionChain``."""
+
+    def __init__(
+        self,
+        *,
+        exchange: str = "SMART",
+        underlyingConId: int = 0,
+        tradingClass: str = "",
+        multiplier: str = "100",
+        expirations: list[str] | None = None,
+        strikes: list[float] | None = None,
+    ) -> None:
+        self.exchange = exchange
+        self.underlyingConId = underlyingConId
+        self.tradingClass = tradingClass
+        self.multiplier = multiplier
+        self.expirations = list(expirations or [])
+        self.strikes = list(strikes or [])
+
+
 class FakeContractDetails:
     """Stand-in for ``ib_async.ContractDetails``."""
 
