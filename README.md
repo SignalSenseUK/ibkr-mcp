@@ -46,7 +46,7 @@ The server connects to a locally running **IB Gateway** or **TWS** instance and 
 ### Install (from source)
 
 ```bash
-git clone https://github.com/<your-org>/ibkr-mcp.git
+git clone https://github.com/SignalSenseUK/ibkr-mcp.git
 cd ibkr-mcp
 uv sync                 # creates .venv and installs dependencies
 cp .env.template .env   # adjust values to taste

@@ -109,6 +109,8 @@ uv run ibkr-mcp --transport streamable-http
 
 ### `systemd` service (Linux)
 
+For a complete step-by-step setup guide covering user creation, directories, permissions, and log monitoring, see the detailed [systemd setup guide](systemd-setup.md).
+
 `/etc/systemd/system/ibkr-mcp.service`:
 
 ```ini
