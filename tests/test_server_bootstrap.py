@@ -205,3 +205,39 @@ class TestMainCli:
 
         assert excinfo.value.code == 0
         assert run_calls == ["stdio"]
+
+    def test_main_graceful_sigterm_exit(
+        self, settings_factory: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """main should catch KeyboardInterrupt and exit cleanly with code 0."""
+
+        fake = FakeIB()
+
+        original_init = ConnectionManager.__init__
+
+        def patched_init(
+            self: ConnectionManager,
+            settings: Settings,
+            ib: object | None = None,
+        ) -> None:
+            from ib_async import IB
+
+            original_init(self, settings=settings, ib=cast(IB, ib if ib is not None else fake))
+
+        monkeypatch.setattr(ConnectionManager, "__init__", patched_init)
+
+        # Stub out FastMCP.run to raise KeyboardInterrupt, simulating SIGTERM/SIGINT
+        def fake_run(self: object, transport: str = "stdio", mount_path: str | None = None) -> None:
+            raise KeyboardInterrupt("Received SIGTERM, shutting down...")
+
+        from mcp.server.fastmcp import FastMCP
+
+        monkeypatch.setattr(FastMCP, "run", fake_run)
+
+        # Force stdio so we don't try to bind a port.
+        monkeypatch.setenv("MCP_TRANSPORT", "stdio")
+
+        with pytest.raises(SystemExit) as excinfo:
+            cli.main(["--transport", "stdio"])
+
+        assert excinfo.value.code == 0

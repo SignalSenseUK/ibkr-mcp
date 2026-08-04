@@ -100,8 +100,22 @@ def main(argv: list[str] | None = None) -> NoReturn:
 
     connected, account_id = asyncio.run(_probe())
     _print_banner(settings, connected=connected, account_id=account_id)
+    import contextlib
+    import signal
 
-    mcp.run(transport=transport_value)  # type: ignore[arg-type]
+    def handle_sigterm(signum: int, frame: object) -> None:
+        raise KeyboardInterrupt("Received SIGTERM, shutting down...")
+
+    with contextlib.suppress(ValueError):
+        # signal.signal only works in main thread (e.g. tests might run in threads)
+        signal.signal(signal.SIGTERM, handle_sigterm)
+
+    try:
+        mcp.run(transport=transport_value)  # type: ignore[arg-type]
+    except KeyboardInterrupt:
+        print("\nShutdown complete.", file=sys.stderr)
+        sys.exit(0)
+
     sys.exit(0)
 
 

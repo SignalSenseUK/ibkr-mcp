@@ -133,9 +133,14 @@ class ConnectionManager:
 
     async def disconnect(self) -> None:
         """Disconnect from IB Gateway / TWS. Idempotent."""
+        import asyncio
+
         try:
-            if self._ib.isConnected():
-                self._ib.disconnect()
+            async with asyncio.timeout(2.0):
+                if self._ib.isConnected():
+                    self._ib.disconnect()
+        except TimeoutError:
+            _log.warning("ib_disconnect_timed_out")
         except Exception as exc:
             _log.warning("ib_disconnect_failed", error=str(exc))
 

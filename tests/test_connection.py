@@ -147,6 +147,27 @@ class TestDisconnect:
         await mgr.disconnect()
         assert fake_ib.disconnect_calls == 0
 
+    async def test_disconnect_timeout_logs_warning(
+        self,
+        fake_ib: FakeIB,
+        settings_factory: Callable[..., Settings],
+    ) -> None:
+        mgr = _mgr(fake_ib, settings_factory())
+        await mgr.connect()
+
+        def raise_timeout() -> None:
+            raise TimeoutError("timed out")
+
+        # Mock the sync disconnect method to raise TimeoutError
+        fake_ib.disconnect = raise_timeout  # type: ignore[method-assign]
+
+        from structlog.testing import capture_logs
+
+        with capture_logs() as caps:
+            await mgr.disconnect()
+
+        assert any(log.get("event") == "ib_disconnect_timed_out" for log in caps)
+
 
 class TestProperties:
     async def test_ib_property_exposes_underlying_client(
