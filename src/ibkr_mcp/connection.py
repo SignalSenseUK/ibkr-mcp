@@ -41,6 +41,7 @@ class ConnectionManager:
         self._settings = settings
         self._ib: IB = ib if ib is not None else IB()
         self._account_id: str | None = None
+        self._client_id: int | None = None
 
     # ------------------------------------------------------------------ props
     @property
@@ -61,6 +62,11 @@ class ConnectionManager:
         """Resolved account id, or ``None`` if connect has not (yet) succeeded."""
         return self._account_id
 
+    @property
+    def client_id(self) -> int | None:
+        """The client ID currently active for the connection."""
+        return self._client_id
+
     # --------------------------------------------------------------- methods
     async def connect(self) -> bool:
         """Connect to IB Gateway / TWS.
@@ -72,20 +78,38 @@ class ConnectionManager:
 
         host = self._settings.IB_HOST
         port = self._settings.IB_PORT
-        client_id = self._settings.IB_CLIENT_ID
+        base_client_id = self._settings.IB_CLIENT_ID
+        max_attempts = 5
 
-        try:
-            await self._ib.connectAsync(host=host, port=port, clientId=client_id)
-        except Exception as exc:
-            _log.warning(
-                "ib_connect_failed",
-                host=host,
-                port=port,
-                client_id=client_id,
-                error=str(exc),
-                error_type=exc.__class__.__name__,
-            )
-            return False
+        client_id = base_client_id
+        for attempt in range(max_attempts):
+            try:
+                await self._ib.connectAsync(host=host, port=port, clientId=client_id)
+                self._client_id = client_id
+                break
+            except ConnectionRefusedError as exc:
+                # Gateway is down/not listening; fail immediately without retrying other client IDs
+                _log.warning(
+                    "ib_connect_gateway_unreachable",
+                    host=host,
+                    port=port,
+                    error=str(exc),
+                )
+                return False
+            except Exception as exc:
+                is_last = (attempt == max_attempts - 1)
+                _log.warning(
+                    "ib_connect_attempt_failed",
+                    host=host,
+                    port=port,
+                    client_id=client_id,
+                    error=str(exc),
+                    error_type=exc.__class__.__name__,
+                    will_retry=not is_last,
+                )
+                if is_last:
+                    return False
+                client_id += 1
 
         # Apply market-data-type for the lifetime of this connection. This is
         # done once here so individual tools never need to re-issue it.
@@ -125,7 +149,7 @@ class ConnectionManager:
             "ib_connected",
             host=host,
             port=port,
-            client_id=client_id,
+            client_id=self._client_id,
             account_id=self._account_id,
             market_data_type=self._settings.IB_MARKET_DATA_TYPE.value,
         )

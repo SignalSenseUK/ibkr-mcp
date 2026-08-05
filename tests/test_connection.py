@@ -128,6 +128,43 @@ class TestConnectFailures:
         assert ok is True
         assert mgr.account_id is None
 
+    async def test_connect_fallback_on_client_id_collision(
+        self, fake_ib: FakeIB, settings_factory: Callable[..., Settings]
+    ) -> None:
+        calls = []
+
+        async def mock_connect_async(host: str, port: int, clientId: int, **kwargs: object) -> None:
+            calls.append(clientId)
+            if clientId == 1:
+                raise OSError("ClientId already in use")
+            fake_ib.connected = True
+
+        fake_ib.connectAsync = mock_connect_async  # type: ignore[method-assign]
+
+        mgr = _mgr(fake_ib, settings_factory(IB_CLIENT_ID=1))
+        ok = await mgr.connect()
+        assert ok is True
+        assert mgr.is_connected is True
+        assert mgr.client_id == 2
+        assert calls == [1, 2]
+
+    async def test_connect_refused_fails_immediately_without_fallback(
+        self, fake_ib: FakeIB, settings_factory: Callable[..., Settings]
+    ) -> None:
+        calls = []
+
+        async def mock_connect_async(host: str, port: int, clientId: int, **kwargs: object) -> None:
+            calls.append(clientId)
+            raise ConnectionRefusedError("Connection refused")
+
+        fake_ib.connectAsync = mock_connect_async  # type: ignore[method-assign]
+
+        mgr = _mgr(fake_ib, settings_factory(IB_CLIENT_ID=1))
+        ok = await mgr.connect()
+        assert ok is False
+        assert mgr.is_connected is False
+        assert calls == [1]
+
 
 class TestDisconnect:
     async def test_disconnect_when_connected(

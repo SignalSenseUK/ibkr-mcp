@@ -39,7 +39,7 @@ async def get_server_status(ctx: Context) -> str:  # type: ignore[type-arg]
         status=_connection_status(app_ctx),
         ibHost=settings.IB_HOST,
         ibPort=settings.IB_PORT,
-        clientId=settings.IB_CLIENT_ID,
+        clientId=app_ctx.manager.client_id if app_ctx.manager.client_id is not None else settings.IB_CLIENT_ID,
         accountId=app_ctx.account_id,
         paperTrading=settings.IB_PAPER_TRADING,
         serverVersion=app_ctx.server_version,

@@ -30,7 +30,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _print_banner(settings: Settings, connected: bool, account_id: str | None) -> None:
+def _print_banner(
+    settings: Settings,
+    connected: bool,
+    account_id: str | None,
+    client_id: int | None = None,
+) -> None:
     """Emit the spec §11 startup banner to stderr."""
 
     transport = settings.MCP_TRANSPORT.value
@@ -42,9 +47,10 @@ def _print_banner(settings: Settings, connected: bool, account_id: str | None) -
 
     print(f"IBKR MCP Server v{__version__}", file=sys.stderr)
     if connected:
+        actual_id = client_id if client_id is not None else settings.IB_CLIENT_ID
         print(
             f"Connected to IB Gateway at {settings.IB_HOST}:{settings.IB_PORT} "
-            f"(client_id={settings.IB_CLIENT_ID})",
+            f"(client_id={actual_id})",
             file=sys.stderr,
         )
     else:
@@ -91,15 +97,16 @@ def main(argv: list[str] | None = None) -> NoReturn:
 
     from ibkr_mcp.connection import ConnectionManager
 
-    async def _probe() -> tuple[bool, str | None]:
+    async def _probe() -> tuple[bool, str | None, int | None]:
         probe_mgr = ConnectionManager(settings=settings)
         ok = await probe_mgr.connect()
         account = probe_mgr.account_id
+        client_id = probe_mgr.client_id
         await probe_mgr.disconnect()
-        return ok, account
+        return ok, account, client_id
 
-    connected, account_id = asyncio.run(_probe())
-    _print_banner(settings, connected=connected, account_id=account_id)
+    connected, account_id, active_client_id = asyncio.run(_probe())
+    _print_banner(settings, connected=connected, account_id=account_id, client_id=active_client_id)
     import contextlib
     import signal
 
