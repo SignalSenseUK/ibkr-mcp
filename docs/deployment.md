@@ -125,6 +125,9 @@ User=ibkrmcp
 WorkingDirectory=/opt/ibkr-mcp
 EnvironmentFile=/etc/ibkr-mcp/env
 ExecStart=/usr/local/bin/uv run --directory /opt/ibkr-mcp ibkr-mcp --transport streamable-http
+# Give the process enough time to disconnect cleanly on SIGTERM before SIGKILL is sent
+TimeoutStopSec=10
+
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

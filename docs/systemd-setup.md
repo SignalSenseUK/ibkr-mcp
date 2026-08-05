@@ -102,6 +102,9 @@ ExecStart=/opt/ibkr-mcp/.venv/bin/ibkr-mcp
 # Load environment configuration
 EnvironmentFile=/etc/ibkr-mcp/ibkr-mcp.env
 
+# Give the process enough time to disconnect cleanly on SIGTERM before SIGKILL is sent
+TimeoutStopSec=10
+
 # Restart configuration on failure
 Restart=always
 RestartSec=5
